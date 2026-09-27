@@ -1,0 +1,44 @@
+{
+  "name": "seo-webmaster-mcp",
+  "version": "0.3.0",
+  "description": "MCP para auditar SEO y preparación GEO con Google Search Console, Bing y rastreo web acotado.",
+  "license": "MIT",
+  "mcpName": "io.github.jvnndev/seo-webmaster-mcp",
+  "repository": { "type": "git", "url": "git+https://github.com/JvnnDev/seo-webmaster-mcp.git" },
+  "homepage": "https://github.com/JvnnDev/seo-webmaster-mcp#readme",
+  "keywords": ["mcp", "seo", "geo", "search-console", "bing-webmaster"],
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "seo-webmaster-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "start": "node dist/index.js",
+    "setup": "node dist/cli.js setup",
+    "status": "node dist/cli.js status",
+    "test": "npm run build && node --test test/server.test.mjs test/advanced.test.mjs"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^8.7.2",
+    "@modelcontextprotocol/sdk": "1.30.1",
+    "cheerio": "^1.2.0",
+    "csv-parse": "^7.0.3",
+    "fast-xml-parser": "^5.11.1",
+    "google-auth-library": "^11.1.0",
+    "open": "^11.0.4",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "~5.9.3"
+  }
+}

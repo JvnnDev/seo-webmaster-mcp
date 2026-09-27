@@ -1,0 +1,7 @@
+node_modules/
+dist/
+cliente-oauth.json
+*oauth*.json
+client_secret*.json
+credentials.json
+.env*
