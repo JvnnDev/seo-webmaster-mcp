@@ -10,13 +10,14 @@ No necesitas clonar ni compilar el repositorio. Configura cada proveedor que qui
 npx -y seo-webmaster-mcp setup bing
 npx -y seo-webmaster-mcp setup google --client /ruta/al/cliente-oauth.json
 npx -y seo-webmaster-mcp status
+npx -y seo-webmaster-mcp doctor
 ```
 
 **Bing:** crea tu clave en [Bing Webmaster Tools](https://learn.microsoft.com/en-us/bingwebmaster/getting-access). El asistente la solicita sin mostrarla y comprueba que funciona.
 
 **Google:** en [Google Cloud Console](https://console.cloud.google.com/) habilita la Search Console API, configura la pantalla OAuth y descarga un cliente OAuth de tipo **Desktop app**. Si la aplicación está en modo *Testing*, agrega tu cuenta como usuario de prueba. Pasa el archivo JSON al comando `setup google`; el navegador solicitará acceso de solo lectura y completará la conexión mediante un callback local. Cada usuario crea su propio cliente OAuth; no compartas el JSON ni el token de renovación. [Guía oficial de autorización](https://developers.google.com/webmaster-tools/v1/how-tos/authorizing).
 
-La configuración se guarda fuera del repositorio, en el perfil del usuario. `status` muestra la ruta y el estado sin revelar secretos. Para desconectar: `npx -y seo-webmaster-mcp disconnect google` o `disconnect bing`. En macOS/Linux el archivo tiene permisos `0600`; en Windows se guarda en AppData del usuario. Protege tu sesión de sistema porque el token de renovación se conserva localmente.
+La configuración se guarda fuera del repositorio, en el perfil del usuario. `status` muestra la ruta y el estado sin revelar secretos; `doctor` prueba el acceso real a ambos proveedores. Para desconectar: `npx -y seo-webmaster-mcp disconnect google` o `disconnect bing`. En macOS/Linux el archivo tiene permisos `0600`; en Windows se guarda en AppData del usuario. Protege tu sesión de sistema porque el token de renovación se conserva localmente.
 
 ## Conectar tu cliente MCP
 

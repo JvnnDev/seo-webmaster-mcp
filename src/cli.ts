@@ -3,6 +3,8 @@ import { input, password, select } from "@inquirer/prompts";
 import { connectBing, connectGoogle } from "./auth.js";
 import { credentialsPath, loadCredentials, saveCredentials } from "./config.js";
 import { importGeoReport } from "./geo.js";
+import { bingListSites } from "./bing.js";
+import { gscListSites } from "./google.js";
 
 async function setup(provider?: string, clientPath?: string): Promise<void> {
   const choice = provider || await select({
@@ -17,9 +19,17 @@ async function setup(provider?: string, clientPath?: string): Promise<void> {
     const verified = await connectBing(key);
     console.log(`Bing conectado. Sitios verificados: ${verified}.`);
   } else if (choice === "google") {
+    console.log("Google: habilita Search Console API, configura OAuth y descarga un cliente Desktop app.");
+    console.log("Guía: https://developers.google.com/webmaster-tools/v1/how-tos/authorizing");
     const path = clientPath || await input({ message: "Ruta del JSON OAuth de escritorio de Google:" });
     await connectGoogle(path);
-    console.log("Google Search Console conectado.");
+    try {
+      const sites = await gscListSites();
+      console.log(`Google Search Console conectado. Propiedades accesibles: ${sites.sites.length}.`);
+    } catch (error) {
+      console.log("Google guardó la autorización, pero no pudo consultar propiedades.");
+      console.log(error instanceof Error ? error.message : "Error inesperado.");
+    }
   } else {
     throw new Error("Proveedor desconocido. Usa bing o google.");
   }
@@ -39,6 +49,17 @@ async function main(): Promise<void> {
       bingConnected: Boolean(credentials.bingApiKey),
       googleConnected: Boolean(credentials.google?.refreshToken),
     }, null, 2));
+  } else if (command === "doctor") {
+    const credentials = await loadCredentials();
+    const checks = await Promise.allSettled([
+      credentials.bingApiKey ? bingListSites() : Promise.resolve(null),
+      credentials.google ? gscListSites() : Promise.resolve(null),
+    ]);
+    const format = (index: number, configured: boolean) => !configured ? { status: "not_configured" }
+      : checks[index].status === "fulfilled" ? { status: "ok", siteCount: checks[index].value?.sites.length || 0 }
+        : { status: "error", message: checks[index].reason instanceof Error ? checks[index].reason.message : "Error inesperado." };
+    console.log(JSON.stringify({ bing: format(0, Boolean(credentials.bingApiKey)),
+      google: format(1, Boolean(credentials.google)) }, null, 2));
   } else if (command === "disconnect") {
     const credentials = await loadCredentials();
     if (provider === "bing") delete credentials.bingApiKey;
@@ -66,6 +87,7 @@ async function main(): Promise<void> {
     console.log("Uso: seo-webmaster-mcp setup [bing|google] [--client ruta.json]");
     console.log("     seo-webmaster-mcp status");
     console.log("     seo-webmaster-mcp disconnect [bing|google]");
+    console.log("     seo-webmaster-mcp doctor");
     console.log("     seo-webmaster-mcp config [codex|claude|cursor]");
     console.log("     seo-webmaster-mcp geo-import archivo.csv siteUrl startDate endDate page|date");
   }
