@@ -10,10 +10,15 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const serverPath = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
 const require = createRequire(import.meta.url);
+const temporaryCredentialsPath = (temporary) => join(
+  process.platform === "darwin" ? join(temporary, "Library", "Application Support") : temporary,
+  "seo-webmaster-mcp",
+  "credentials.json",
+);
 
 test("contrato MCP, fechas y ausencia de datos de Bing", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "seo-webmaster-mcp-"));
-  const configPath = join(temporary, "seo-webmaster-mcp", "credentials.json");
+  const configPath = temporaryCredentialsPath(temporary);
   await mkdir(dirname(configPath), { recursive: true });
   await writeFile(configPath, JSON.stringify({ bingApiKey: "test-key" }));
 
@@ -34,7 +39,7 @@ test("contrato MCP, fechas y ausencia de datos de Bing", async () => {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["--import", `data:text/javascript,${encodeURIComponent(mock)}`, serverPath],
-    env: { ...process.env, APPDATA: temporary, XDG_CONFIG_HOME: temporary },
+    env: { ...process.env, APPDATA: temporary, XDG_CONFIG_HOME: temporary, HOME: temporary },
   });
   const call = async (name, args = {}) => {
     const response = await client.callTool({ name, arguments: args });
@@ -90,7 +95,7 @@ test("contrato MCP, fechas y ausencia de datos de Bing", async () => {
 
 test("consultas de Search Console con OAuth simulado", async () => {
   const temporary = await mkdtemp(join(tmpdir(), "seo-webmaster-gsc-"));
-  const configPath = join(temporary, "seo-webmaster-mcp", "credentials.json");
+  const configPath = temporaryCredentialsPath(temporary);
   await mkdir(dirname(configPath), { recursive: true });
   await writeFile(configPath, JSON.stringify({
     google: { clientId: "client", clientSecret: "secret", refreshToken: "refresh" },
@@ -129,7 +134,7 @@ test("consultas de Search Console con OAuth simulado", async () => {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["--import", `data:text/javascript,${encodeURIComponent(mock)}`, serverPath],
-    env: { ...process.env, APPDATA: temporary, XDG_CONFIG_HOME: temporary },
+    env: { ...process.env, APPDATA: temporary, XDG_CONFIG_HOME: temporary, HOME: temporary },
   });
   const call = async (name, args = {}) => {
     const response = await client.callTool({ name, arguments: args });
