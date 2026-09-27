@@ -8,6 +8,9 @@ type Action = {
   code: string; priority: "high" | "medium" | "low"; confidence: "verified" | "inferred";
   title: string; affectedUrls: string[]; evidence: unknown; steps: string[];
   verification: string; effort: "low" | "medium" | "high";
+  source: "google" | "bing" | "crawl" | "crosscheck" | "analysis";
+  observedAt: string;
+  impact: { metric: "affected_pages" | "impressions"; value: number } | null;
 };
 
 function defaultDates(args: JsonObject) {
@@ -17,7 +20,15 @@ function defaultDates(args: JsonObject) {
   return { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) };
 }
 
-function add(actions: Action[], action: Action) { actions.push(action); }
+function add(actions: Action[], action: Omit<Action, "source" | "observedAt" | "impact"> &
+  Partial<Pick<Action, "source" | "impact">>) {
+  const source = action.source || (action.code.startsWith("google_") ? "google" :
+    action.code.startsWith("bing_") ? "bing" : action.code === "query_page_opportunities" ? "analysis" : "crawl");
+  const evidence = action.evidence as { count?: number } | null;
+  actions.push({ ...action, source, observedAt: new Date().toISOString(),
+    impact: action.impact || (typeof evidence?.count === "number"
+      ? { metric: "affected_pages", value: evidence.count } : null) });
+}
 
 function crawlActions(pages: CrawlPage[], actions: Action[]) {
   const checks: Array<{
@@ -127,7 +138,8 @@ export async function seoAuditAdvanced(args: JsonObject) {
         priority: finding.severity, confidence: "verified", affectedUrls: [],
         evidence: finding.evidence || { provider: finding.provider }, effort: "medium",
         steps: finding.nextStep ? [finding.nextStep] : ["Revisar el detalle en la herramienta de origen."],
-        verification: "El proveedor deja de reportar el problema en una nueva consulta." });
+        verification: "El proveedor deja de reportar el problema en una nueva consulta.",
+        source: finding.provider });
     }
   }
   if (crawl) {
@@ -137,7 +149,8 @@ export async function seoAuditAdvanced(args: JsonObject) {
     if (stale.length) {
       add(actions, { code: "submitted_sitemap_http_error", title: "Sitemap enviado a Google que devuelve error HTTP",
         priority: "high", confidence: "verified", affectedUrls: stale.map((row) => row.url),
-        evidence: stale, effort: "low",
+        evidence: stale, effort: "low", source: "crosscheck",
+        impact: { metric: "affected_pages", value: stale.length },
         steps: ["Corregir el sitemap o retirar su envío antiguo de Search Console si fue reemplazado."],
         verification: "Solo quedan enviados sitemaps accesibles y vigentes." });
     }
@@ -150,6 +163,7 @@ export async function seoAuditAdvanced(args: JsonObject) {
     title: "Pares consulta–página con visibilidad y pocos clics", priority: "medium", confidence: "inferred",
     affectedUrls: [...new Set(lowCtrPairs.map((row) => String(row.keys[1])))],
     evidence: lowCtrPairs, effort: "medium",
+    impact: { metric: "impressions", value: lowCtrPairs.reduce((sum, row) => sum + Number(row.impressions), 0) },
     steps: ["Revisar intención de búsqueda, título y descripción visibles para cada par; priorizar consultas relevantes para el negocio."],
     verification: "Comparar CTR, posición y clics durante un periodo equivalente tras el cambio." });
   const currentTotals = official?.google?.performance?.totals as { clicks?: number; impressions?: number } | null | undefined;
