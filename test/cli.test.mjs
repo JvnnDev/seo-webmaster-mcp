@@ -10,7 +10,7 @@ const cli = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
 
 test("CLI anuncia su versión, explica su uso y rechaza comandos desconocidos", () => {
   const run = (...args) => spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", timeout: 15_000 });
-  assert.match(run("--version").stdout, /^0\.4\.0\r?\n$/);
+  assert.match(run("--version").stdout, /^0\.5\.0\r?\n$/);
   const help = run("--help");
   assert.equal(help.status, 0);
   assert.match(help.stdout, /doctor/);

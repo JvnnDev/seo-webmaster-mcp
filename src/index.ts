@@ -33,7 +33,8 @@ import {
 import { seoAuditSite } from "./audit.js";
 import { seoAuditAdvanced } from "./advanced.js";
 import { geoReportSummary } from "./geo.js";
-import { object, type JsonObject } from "./utils.js";
+import { object, requiredString, optionalLimit, type JsonObject } from "./utils.js";
+import { compareReports, listReports, readReport, reportMarkdown, comparisonMarkdown, saveReport } from "./reports.js";
 
 const siteUrl = { type: "string" as const, description: "URL exacta de la propiedad verificada." };
 const date = {
@@ -46,6 +47,11 @@ const limit = { type: "integer" as const, minimum: 1, maximum: 1000, default: 10
 const gscLimit = { type: "integer" as const, minimum: 1, maximum: 1000, default: 1000 };
 const url = { type: "string" as const, description: "URL completa que pertenece al sitio." };
 const page = { type: "integer" as const, minimum: 0, maximum: 32767, default: 0 };
+const render = { type: "string" as const, enum: ["static", "js"], default: "static",
+  description: "js usa Chrome/Chromium/Edge instalado; por defecto 10 páginas, máximo 20. static no inicia navegador." };
+const performance = { type: "boolean" as const, default: false,
+  description: "Consulta PageSpeed Insights para la URL de entrada. Envía esa URL a Google; PAGESPEED_API_KEY opcional." };
+const performanceStrategy = { type: "string" as const, enum: ["mobile", "desktop"], default: "mobile" };
 
 const tools: Tool[] = [
   {
@@ -219,11 +225,23 @@ const tools: Tool[] = [
       required: ["siteUrl", "query"], additionalProperties: false } },
   { name: "geo_report_summary", description: "Resumen del último CSV generativo de Google importado localmente.",
     inputSchema: { type: "object", properties: { siteUrl }, required: ["siteUrl"], additionalProperties: false } },
-  { name: "seo_audit_advanced", description: "Audita una URL pública sin credenciales: rastreo HTML, JSON-LD sintáctico, canónicas, idioma, viewport e imágenes sin alt. Propone acciones con evidencia y verificación. Consulta summary para explicar cobertura y límites: cero acciones no significa que no haya nada que mejorar. Añade gscSiteUrl o bingSiteUrl para incluir datos oficiales de proveedores configurados.",
+  { name: "seo_audit_advanced", description: "Audita una URL pública sin credenciales: rastreo, canonical, hreflang, encabezados, imágenes, metadatos sociales y propiedades JSON-LD seleccionadas. render=js activa un navegador instalado; performance=true consulta PageSpeed Insights. Propone acciones con evidencia y checks registra cobertura: cero acciones no implica revisión exhaustiva. Proveedores opcionales: Google Search Console y Bing. No guarda archivos.",
     inputSchema: { type: "object", properties: { bingSiteUrl: siteUrl, gscSiteUrl: siteUrl,
-      baseUrl: url, startDate: date, endDate: date,
+      baseUrl: url, startDate: date, endDate: date, render, performance, performanceStrategy,
       maxPages: { type: "integer", minimum: 1, maximum: 500, default: 100 },
     }, required: ["baseUrl"], additionalProperties: false } },
+  { name: "seo_audit_save", description: "Ejecuta una auditoría y guarda explícitamente el informe en el historial local del usuario. No modifica la web. Devuelve un id para consultar o comparar después; el informe puede contener datos privados de proveedores.",
+    inputSchema: { type: "object", properties: { baseUrl: url, bingSiteUrl: siteUrl, gscSiteUrl: siteUrl,
+      startDate: date, endDate: date, render, performance, performanceStrategy,
+      maxPages: { type: "integer", minimum: 1, maximum: 500, default: 100 } },
+      required: ["baseUrl"], additionalProperties: false } },
+  { name: "seo_audit_history", description: "Lista las auditorías guardadas en el perfil local, con id, fecha, URL y estado. No consulta la web ni crea archivos.",
+    inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 100, default: 20 } }, additionalProperties: false } },
+  { name: "seo_audit_report", description: "Consulta un informe guardado por id; format json o markdown. Devuelve el contenido, sin escribir un archivo ni leer rutas arbitrarias.",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, format: { type: "string", enum: ["json", "markdown"], default: "json" } }, required: ["id"], additionalProperties: false } },
+  { name: "seo_audit_compare", description: "Compara dos auditorías guardadas del mismo origen por regla y URL: nuevos, persistentes, resueltos y no comparables. Una URL omitida o una regla fallida nunca cuentan como corrección. No modifica informes.",
+    inputSchema: { type: "object", properties: { baselineId: { type: "string" }, currentId: { type: "string" },
+      format: { type: "string", enum: ["json", "markdown"], default: "json" } }, required: ["baselineId", "currentId"], additionalProperties: false } },
 ];
 
 async function callTool(name: string, args: JsonObject): Promise<unknown> {
@@ -253,17 +271,35 @@ async function callTool(name: string, args: JsonObject): Promise<unknown> {
     case "bing_query_pages": return bingQueryPages(args);
     case "geo_report_summary": return geoReportSummary(args);
     case "seo_audit_advanced": return seoAuditAdvanced(args);
+    case "seo_audit_save": {
+      const report = await seoAuditAdvanced(args);
+      return { saved: await saveReport(report), report };
+    }
+    case "seo_audit_history": return listReports(optionalLimit(args, 20, 100));
+    case "seo_audit_report": {
+      if (args.format !== undefined && !["json", "markdown"].includes(String(args.format))) throw new Error("format debe ser json o markdown.");
+      const saved = await readReport(requiredString(args, "id"));
+      return args.format === "markdown" ? { id: saved.id, markdown: reportMarkdown(saved.report) } : saved;
+    }
+    case "seo_audit_compare": {
+      if (args.format !== undefined && !["json", "markdown"].includes(String(args.format))) throw new Error("format debe ser json o markdown.");
+      const baseline = await readReport(requiredString(args, "baselineId"));
+      const current = await readReport(requiredString(args, "currentId"));
+      const comparison = compareReports(baseline.report, current.report);
+      return args.format === "markdown" ? { markdown: comparisonMarkdown(comparison) } : comparison;
+    }
     default: throw new Error(`Herramienta desconocida: ${name}`);
   }
 }
 
 const server = new Server(
-  { name: "seo-webmaster-mcp", version: "0.4.0" },
+  { name: "seo-webmaster-mcp", version: "0.5.0" },
   { capabilities: { tools: {} } },
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools.map((tool) => ({ ...tool,
-  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  annotations: { readOnlyHint: tool.name !== "seo_audit_save", destructiveHint: false,
+    idempotentHint: tool.name !== "seo_audit_save", openWorldHint: !["seo_audit_history", "seo_audit_report", "seo_audit_compare"].includes(tool.name) },
 })) }));
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {

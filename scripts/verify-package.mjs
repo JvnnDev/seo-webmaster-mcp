@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
@@ -49,8 +49,8 @@ try {
     await client.connect(transport);
     assert.equal(client.getServerVersion().version, manifest.version);
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 25);
-    assert(tools.every((tool) => tool.annotations?.readOnlyHint === true));
+    assert.equal(tools.length, 29);
+    assert(tools.every((tool) => tool.annotations?.readOnlyHint === (tool.name !== "seo_audit_save")));
     for (const [file, expected] of [["before.html", 4], ["after.html", 0]]) {
       const response = await client.callTool({ name: "seo_audit_advanced", arguments: {
         baseUrl: `https://audit.example/${file}`, maxPages: 1,
@@ -62,9 +62,39 @@ try {
       assert.equal(report.crawl.pages[0].status, 200);
       assert.equal(report.official, null);
     }
+    const call = async (name, args = {}) => {
+      const response = await client.callTool({ name, arguments: args });
+      assert(!response.isError, response.content[0].text);
+      return JSON.parse(response.content[0].text);
+    };
+    const saved = await call("seo_audit_save", { baseUrl: "https://audit.example/before.html", maxPages: 1 });
+    assert(saved.saved.id);
+    assert.equal((await call("seo_audit_history")).reports.length, 1);
+    assert.match((await call("seo_audit_report", { id: saved.saved.id, format: "markdown" })).markdown, /Evidencia:/);
+    const comparison = await call("seo_audit_compare", { baselineId: saved.saved.id, currentId: saved.saved.id });
+    assert.equal(comparison.summary.persistent, 4);
+    assert.equal(comparison.summary.resolved, 0);
   } finally { await client.close(); }
+  const markdown = await execute(process.execPath, ["--import", new URL("../examples/offline-network.mjs", import.meta.url).href,
+    cli, "audit", "https://audit.example/after.html", "--max-pages", "1", "--format", "markdown"], {
+    env: { ...process.env, APPDATA: configRoot, XDG_CONFIG_HOME: configRoot, HOME: configRoot }, timeout: 30_000,
+  });
+  assert.match(markdown.stdout, /Auditoría SEO/);
+  const { browserExecutable } = await import(pathToFileURL(join(installRoot, "node_modules", manifest.name, "dist", "render.js")).href);
+  let browserRender = "not_available";
+  if (await browserExecutable()) {
+    const rendered = await execute(process.execPath, ["--import", new URL("../examples/offline-network.mjs", import.meta.url).href,
+      cli, "audit", "https://audit.example/after.html", "--max-pages", "1", "--render", "js"], {
+      env: { ...process.env, APPDATA: configRoot, XDG_CONFIG_HOME: configRoot, HOME: configRoot }, timeout: 40_000, maxBuffer: 2_000_000,
+    });
+    const report = JSON.parse(rendered.stdout);
+    assert.equal(report.summary.rendering.complete, 1);
+    assert.equal(report.status, "complete");
+    browserRender = "ok";
+  }
   console.log(JSON.stringify({ version: manifest.version, packageFiles: files.length,
-    freshInstall: "ok", mcpTools: 25, auditBefore: 4, auditAfter: 0, credentialsRead: false }, null, 2));
+    freshInstall: "ok", mcpTools: 29, auditBefore: 4, auditAfter: 0, credentialsRead: false,
+    localHistory: "ok", comparison: "ok", markdownCli: "ok", browserRender }, null, 2));
 } finally {
   const withinTemp = relative(resolve(tmpdir()), resolve(temporary));
   assert(withinTemp && !withinTemp.startsWith("..") && basename(temporary).startsWith("seo-webmaster-package-"),

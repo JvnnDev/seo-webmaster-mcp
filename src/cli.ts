@@ -6,6 +6,7 @@ import { importGeoReport } from "./geo.js";
 import { bingListSites } from "./bing.js";
 import { gscListSites } from "./google.js";
 import { readFile } from "node:fs/promises";
+import { auditCli } from "./audit-cli.js";
 
 async function setup(provider?: string, clientPath?: string): Promise<void> {
   const choice = provider || await select({
@@ -38,7 +39,9 @@ async function setup(provider?: string, clientPath?: string): Promise<void> {
 
 async function main(): Promise<void> {
   const [command = "serve", provider, option, optionValue, fifth, sixth] = process.argv.slice(2);
-  if (command === "--version" || command === "-v") {
+  if (["audit", "history", "report", "compare"].includes(command)) {
+    await auditCli(command, process.argv.slice(3));
+  } else if (command === "--version" || command === "-v") {
     const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
     console.log(manifest.version);
   } else if (command === "serve") {
@@ -96,6 +99,13 @@ async function main(): Promise<void> {
     console.log("     seo-webmaster-mcp config [codex|claude|cursor]");
     console.log("     seo-webmaster-mcp geo-import archivo.csv siteUrl startDate endDate page|date");
     console.log("     seo-webmaster-mcp --version");
+    console.log("     seo-webmaster-mcp audit URL [--max-pages N] [--save] [--format json|markdown] [--out archivo] [--fail-on-high]");
+    console.log("       [--gsc propiedad] [--bing propiedad] [--start YYYY-MM-DD --end YYYY-MM-DD]");
+    console.log("       [--render static|js] [--performance] [--performance-strategy mobile|desktop]");
+    console.log("     seo-webmaster-mcp history [--limit N]");
+    console.log("     seo-webmaster-mcp report ID [--format json|markdown] [--out archivo]");
+    console.log("     seo-webmaster-mcp compare ID_O_ARCHIVO_BASE ID_O_ARCHIVO_ACTUAL [--format json|markdown] [--out archivo] [--fail-on-regression]");
+    console.log("Códigos: 0 correcto, 1 uso/error, 2 incompleto/no comparable, 3 política de hallazgos/regresión.");
   } else throw new Error(`Comando desconocido: ${command}. Usa --help para ver los comandos disponibles.`);
 }
 

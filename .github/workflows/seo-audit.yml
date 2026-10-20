@@ -1,0 +1,42 @@
+name: Audit a public URL
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Public HTTP(S) URL to audit
+        required: true
+        default: https://example.com/
+      pages:
+        description: Maximum pages
+        type: choice
+        options: ['1', '10', '25', '50']
+        default: '10'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Audit and flag high-priority findings
+        env:
+          AUDIT_URL: ${{ inputs.url }}
+          AUDIT_PAGES: ${{ inputs.pages }}
+        run: node dist/cli.js audit "$AUDIT_URL" --max-pages "$AUDIT_PAGES" --out seo-report.json --fail-on-high
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: seo-report
+          path: seo-report.json
+          if-no-files-found: ignore
+          retention-days: 7

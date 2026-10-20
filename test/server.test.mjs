@@ -94,8 +94,8 @@ test("contrato MCP, fechas y ausencia de datos de Bing", async () => {
   try {
     await client.connect(transport);
     const listed = await client.listTools();
-    assert.equal(listed.tools.length, 25);
-    assert(listed.tools.every((tool) => tool.annotations?.readOnlyHint === true && tool.annotations.destructiveHint === false));
+    assert.equal(listed.tools.length, 29);
+    assert(listed.tools.every((tool) => tool.annotations?.readOnlyHint === (tool.name !== "seo_audit_save") && tool.annotations.destructiveHint === false));
     assert(listed.tools.some((tool) => tool.name === "gsc_search_performance"));
 
     const sites = await call("bing_list_sites");
@@ -406,7 +406,7 @@ test("demo antes/después ejecuta el MCP sin red, claves ni nuevas herramientas"
   };
   try {
     await client.connect(transport);
-    assert.equal((await client.listTools()).tools.length, 25);
+    assert.equal((await client.listTools()).tools.length, 29);
     const before = await call("before.html");
     assert.equal(before.status, "complete");
     assert.equal(before.official, null);

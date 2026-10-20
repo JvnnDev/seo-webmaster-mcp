@@ -102,6 +102,43 @@ También puedes reproducir un error de JSON-LD con `<script type="application/ld
 
 ¿Te ayudó a encontrar algo que corregiste? ¿Dónde te atascaste? [Cuéntalo en una issue](https://github.com/JvnnDev/seo-webmaster-mcp/issues/new), indicando tu cliente MCP, sistema operativo y pasos para reproducirlo. Anonimiza los datos privados y evita incluir credenciales.
 
+## Guardar y comparar auditorías (0.5.0)
+
+Puedes completar el ciclo desde la CLI, sin clonar el repositorio:
+
+```bash
+npx -y seo-webmaster-mcp@0.5.0 audit https://example.com/ --max-pages 25 --save
+npx -y seo-webmaster-mcp@0.5.0 history
+npx -y seo-webmaster-mcp@0.5.0 report ID --format markdown --out informe.md
+# Tras corregir y publicar tu web, repite audit con --save:
+npx -y seo-webmaster-mcp@0.5.0 compare ID_BASE ID_ACTUAL --format markdown
+```
+
+`--save` guarda explícitamente un informe en el perfil local y devuelve
+`saved.id`. Sin esa opción no se crea historial. La comparación distingue
+hallazgos **nuevos, persistentes, resueltos y no comparables**: omitir una página
+o fallar al comprobarla nunca cuenta como corrección. `--out` exporta JSON o
+Markdown sin sobrescribir archivos existentes.
+
+Desde MCP puedes usar `seo_audit_save`, `seo_audit_history`, `seo_audit_report`
+y `seo_audit_compare`. De las 29 herramientas, 28 declaran lectura;
+`seo_audit_save` declara escritura local no idempotente. Ninguna modifica la web.
+
+La versión nueva añade módulos aislados con cobertura y revisiones de hreflang,
+canonical múltiples/destinos, coherencia del sitemap, encabezados, tarjetas
+sociales y propiedades de tipos schema.org seleccionados, incluidos `@graph`.
+`--render js` activa un Chrome/Chromium/Edge instalado y `--performance` consulta
+PageSpeed Insights; ambos son opcionales. No es una validación semántica completa.
+
+```bash
+npx -y seo-webmaster-mcp@0.5.0 audit https://example.com/ --render js --max-pages 5 --save
+npx -y seo-webmaster-mcp@0.5.0 audit https://example.com/ --performance --performance-strategy mobile
+```
+
+Consulta [uso, herramientas y límites](https://github.com/JvnnDev/seo-webmaster-mcp/blob/main/docs/history.md), la
+[evidencia de verificación](https://github.com/JvnnDev/seo-webmaster-mcp/blob/main/docs/verification-0.5.0.md) y la
+[hoja de ruta](https://github.com/JvnnDev/seo-webmaster-mcp/blob/main/docs/roadmap.md).
+
 ## Añadir Google o Bing (opcional)
 
 Configura cada proveedor que quieras usar:
@@ -163,11 +200,11 @@ npm pack --dry-run
 
 El paquete contiene `dist`, README, changelog y licencia. Los ejemplos y la preparación de la publicación se conservan en el repositorio. No publiques credenciales ni el cliente OAuth. Los datos oficiales pueden estar incompletos o retrasados; el MCP distingue ausencia de datos de cero tráfico y evita presentar heurísticas como errores confirmados.
 
-`verify:package` empaqueta el proyecto e instala el tarball en una carpeta temporal, comprueba el ejecutable y sus 25 herramientas MCP, y repite la demo con credenciales locales deliberadamente inválidas. La instalación requiere acceso al registro npm; las auditorías de prueba usan DNS/HTTP simulados. También se ejecuta en CI para Linux, Windows y macOS.
+`verify:package` empaqueta el proyecto e instala el tarball en una carpeta temporal, comprueba el ejecutable y sus 29 herramientas MCP, y repite la demo con credenciales locales deliberadamente inválidas. La instalación requiere acceso al registro npm; las auditorías de prueba usan DNS/HTTP simulados. También se ejecuta en CI para Linux, Windows y macOS.
 
 Para rastreo y conexión HTTP se usan [robots-parser](https://github.com/samclarke/robots-parser) y [Undici](https://github.com/nodejs/undici), respectivamente. No añaden claves ni servicios externos.
 
-Referencias de desarrollo: [claude-seo-ai](https://github.com/Hainrixz/claude-seo-ai/tree/cabd6079dc1ae74682083ad3caf4e09bb1964404), especialmente sus comprobaciones de imágenes y viewport (MIT); [directivas robots de Google](https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag), [idioma del documento](https://www.w3.org/WAI/WCAG21/Techniques/html/H57), [imágenes decorativas](https://www.w3.org/WAI/tutorials/images/decorative/) y [viewport de Lighthouse](https://developer.chrome.com/docs/lighthouse/best-practices/viewport). La implementación y los ejemplos de esta versión son propios; no se incorporan archivos de terceros.
+Referencias de desarrollo: [claude-seo-ai](https://github.com/Hainrixz/claude-seo-ai/tree/cabd6079dc1ae74682083ad3caf4e09bb1964404), especialmente sus comprobaciones de imágenes y viewport, organización modular y comparación de informes (MIT); [directivas robots de Google](https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag), [idioma del documento](https://www.w3.org/WAI/WCAG21/Techniques/html/H57), [imágenes decorativas](https://www.w3.org/WAI/tutorials/images/decorative/) y [viewport de Lighthouse](https://developer.chrome.com/docs/lighthouse/best-practices/viewport). La implementación y los ejemplos de esta versión son propios; no se incorporan archivos de terceros.
 
 ---
 
@@ -184,6 +221,19 @@ For Claude Desktop or Cursor, use the `mcpServers` JSON above. Run `npx -y seo-w
 `summary` reports coverage, checks performed and checks not performed. An empty `actions` array means no issues were detected by these checks in the crawled sample. Each page exposes `jsonLdBlocks` with a 1-based script index and `parsed`, `invalid_json` or `invalid_root` status. Syntax or root errors generate `invalid_json_ld`; `parsed` does not confirm schema.org semantics or rich-result eligibility. Use [Rich Results Test](https://search.google.com/test/rich-results) for the latter. Readiness counts describe observed HTML signals, not confirmed indexing or AI visibility.
 
 Version 0.4.0 also reports images without `alt`, missing or empty HTML language and viewport declarations, and malformed canonical URLs. Each page exposes `lang`, `viewport`, `canonicalError` and `images` (`total`, `missingAlt`, up to five examples with 1-based `imageIndex` and raw `src`, capped at 300 characters). An empty `alt=""` is accepted for decorative images. These are static HTML checks; language accuracy, alt-text quality and responsive layout require review. Robots flags combine general directives and rules for Googlebot, excluding other agents' scoped rules.
+
+Version 0.5.0 adds explicit audit history,
+JSON/Markdown export, comparisons, hreflang, selected schema properties, social
+metadata checks and an internal-link graph. Use `npx -y seo-webmaster-mcp audit URL
+--save`, then `report ID` or `compare BASELINE_ID CURRENT_ID`. Omitted pages and
+failed checks are never labeled as resolved findings.
+
+Optional `--render js` uses an installed Chrome/Chromium/Edge with an isolated
+profile and validated resource transport; no browser is downloaded automatically.
+Optional `--performance` sends the entry URL to Google's PageSpeed Insights API.
+`PAGESPEED_API_KEY` may be provided through the environment. Lab and field data
+are reported separately; missing field data stays unknown. See the
+[usage and limits](https://github.com/JvnnDev/seo-webmaster-mcp/blob/main/docs/history.md).
 
 The crawler itself follows robots.txt for `SEO-Webmaster-MCP`, including shared groups, wildcards and redirects. Unavailable robots responses (network errors, 429 or 5xx) stop that origin. DNS addresses are validated and pinned to the connection, and response bodies are capped at 2 MB while streaming. `summary.truncationReasons` lists page, URL discovery and sitemap limits. Relative links honor the document's base URL. Imported GEO markers `~` and `-` remain unknown (`null`), rather than zero impressions.
 

@@ -4,6 +4,8 @@ import { BlockList, isIP } from "node:net";
 import * as cheerio from "cheerio";
 import { XMLParser } from "fast-xml-parser";
 import { Agent, type Dispatcher } from "undici";
+import { htmlDetails, type HtmlDetails } from "./html-details.js";
+import { createRenderer } from "./render.js";
 
 // robots-parser is CommonJS; its default-export declaration needs an explicit
 // require under TypeScript's NodeNext resolution.
@@ -40,6 +42,9 @@ export type CrawlPage = {
   structuredData: boolean;
   jsonLdBlocks: JsonLdBlock[];
   links: string[];
+  details: HtmlDetails;
+  rendering?: { requested: "js"; status: "complete" | "partial" | "unavailable"; requests: number;
+    errors: Array<{ url: string; error: string }>; static: { title: string | null; h1Count: number; textLength: number } };
   error?: string;
 };
 
@@ -67,7 +72,7 @@ function sameHost(candidate: string, hostname: string): boolean {
   return candidate === hostname || candidate === `www.${hostname}` || hostname === `www.${candidate}`;
 }
 
-async function safeUrl(input: string, hostname?: string) {
+export async function safeUrl(input: string, hostname?: string) {
   const url = new URL(input);
   url.hash = "";
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password ||
@@ -90,7 +95,7 @@ async function safeUrl(input: string, hostname?: string) {
 
 class RobotsBlockedError extends Error {}
 
-async function getText(input: string, hostname: string, beforeRequest?: (url: URL) => Promise<void>): Promise<{ url: string; status: number; redirects: number; body: string; contentType: string; xRobots: string[] }> {
+async function getText(input: string, hostname: string, beforeRequest?: (url: URL) => Promise<void>, signal?: AbortSignal, byteLimit = MAX_BODY): Promise<{ url: string; status: number; redirects: number; body: string; contentType: string; xRobots: string[]; headers: Record<string, string> }> {
   let current = input;
   for (let redirects = 0; redirects <= 5; redirects++) {
     const { url, addresses } = await safeUrl(current, hostname);
@@ -134,19 +139,19 @@ async function getText(input: string, hostname: string, beforeRequest?: (url: UR
     })));
     try {
       const request: RequestInit & { dispatcher: Dispatcher } = {
-        dispatcher, redirect: "manual", signal: AbortSignal.timeout(10_000),
+        dispatcher, redirect: "manual", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
         headers: { "User-Agent": `${CRAWLER}/1.0 (+https://github.com/JvnnDev/seo-webmaster-mcp)` },
       };
       const response = await fetch(url, request);
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get("location");
         await response.body?.cancel();
-        if (!location) return { url: url.href, status: response.status, redirects, body: "", contentType: "", xRobots: [] };
+        if (!location) return { url: url.href, status: response.status, redirects, body: "", contentType: "", xRobots: [], headers: {} };
         current = new URL(location, url).href;
         continue;
       }
       const length = Number(response.headers.get("content-length") || 0);
-      if (length > MAX_BODY) {
+      if (length > byteLimit) {
         await response.body?.cancel();
         throw new Error("Respuesta demasiado grande para la auditoría.");
       }
@@ -158,7 +163,7 @@ async function getText(input: string, hostname: string, beforeRequest?: (url: UR
           const { done, value } = await reader.read();
           if (done) break;
           bytes += value.byteLength;
-          if (bytes > MAX_BODY) {
+          if (bytes > byteLimit) {
             await reader.cancel();
             throw new Error("Respuesta demasiado grande para la auditoría.");
           }
@@ -167,6 +172,7 @@ async function getText(input: string, hostname: string, beforeRequest?: (url: UR
       } finally { reader.releaseLock(); }
       const body = Buffer.concat(chunks, bytes).toString("utf8");
       return { url: url.href, status: response.status, redirects, body,
+        headers: Object.fromEntries(response.headers),
         contentType: (response.headers.get("content-type") || "").toLowerCase(),
         xRobots: robotsHeaders ?? [response.headers.get("x-robots-tag") || ""] };
     } finally { await transport.destroy(); }
@@ -212,13 +218,15 @@ export function analyzeHtml(url: string, finalUrl: string, status: number, redir
   let documentBase = finalUrl;
   const baseHref = $("base[href]").first().attr("href");
   if (baseHref !== undefined) try { documentBase = new URL(baseHref, finalUrl).href; } catch { /* Use the document URL. */ }
-  const canonicalHref = $("link[rel='canonical']").attr("href")?.trim();
+  const details = htmlDetails($, documentBase);
+  const canonicalHref = details.canonicalDeclarations[0]?.href.trim();
   let canonical: string | null = null;
   let canonicalError: string | null = null;
-  if (canonicalHref) {
+  if (canonicalHref !== undefined) {
     try {
+      if (!canonicalHref) throw new Error("Empty canonical");
       const target = new URL(canonicalHref, documentBase);
-      if (!["http:", "https:"].includes(target.protocol)) throw new Error("Unsupported canonical protocol");
+      if (!["http:", "https:"].includes(target.protocol) || target.username || target.password) throw new Error("Unsupported canonical URL");
       canonical = target.href;
     } catch {
       canonicalError = "El href de link[rel='canonical'] no es una URL HTTP(S) válida.";
@@ -287,10 +295,11 @@ export function analyzeHtml(url: string, finalUrl: string, status: number, redir
     structuredData: jsonLdBlocks.length > 0,
     jsonLdBlocks,
     links: [...links],
+    details,
   };
 }
 
-export async function crawlSite(baseUrl: string, maxPages = 100) {
+export async function crawlSite(baseUrl: string, maxPages = 100, options: { render?: "static" | "js" } = {}) {
   if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > 500) throw new Error("maxPages debe estar entre 1 y 500.");
   const { url: base } = await safeUrl(baseUrl);
   const errors: Array<{ url: string; error: string }> = [];
@@ -303,7 +312,7 @@ export async function crawlSite(baseUrl: string, maxPages = 100) {
     let blocked = false;
     const robotsUrl = `${origin}/robots.txt`;
     try {
-      const response = await getText(robotsUrl, base.hostname);
+      const response = await getText(robotsUrl, new URL(origin).hostname);
       if (response.status >= 200 && response.status < 300) text = response.body;
       else if (response.status === 429 || response.status >= 500 || response.status < 400) {
         throw new Error(`robots.txt devolvió HTTP ${response.status}; no se rastrea este origen.`);
@@ -326,6 +335,7 @@ export async function crawlSite(baseUrl: string, maxPages = 100) {
   const sitemapQueue = [...new Set([...initialRules.parser.getSitemaps(), `${base.origin}/sitemap.xml`, `${base.origin}/sitemap-index.xml`])];
   const sitemapSeen = new Set<string>();
   const sitemapStatuses: Array<{ url: string; status: number }> = [];
+  const sitemapUrls = new Set<string>();
   const queue: string[] = [];
   const discovered = new Set<string>();
   let discoveryLimited = false;
@@ -353,7 +363,13 @@ export async function crawlSite(baseUrl: string, maxPages = 100) {
       const found = sitemapLocations(response.body);
       for (const next of found.indexes) if (!sitemapSeen.has(next)) sitemapQueue.push(next);
       for (const page of found.pages) {
-        try { enqueue(page); }
+        try {
+          const candidate = new URL(page);
+          candidate.hash = "";
+          if (sameHost(candidate.hostname, base.hostname) && ["http:", "https:"].includes(candidate.protocol) &&
+              sitemapUrls.size < 1000) sitemapUrls.add(candidate.href);
+          enqueue(page);
+        }
         catch { if (errors.length < 20) errors.push({ url: current, error: "El sitemap contiene una URL mal formada; se conservan las demás entradas." }); }
       }
     } catch (error) {
@@ -362,7 +378,12 @@ export async function crawlSite(baseUrl: string, maxPages = 100) {
   }
   const seen = new Set<string>();
   const pages: CrawlPage[] = [];
+  let renderer: Awaited<ReturnType<typeof createRenderer>> | undefined;
+  let rendererError: string | undefined;
+  if (options.render === "js") try { renderer = await createRenderer(); }
+  catch (error) { rendererError = error instanceof Error ? error.message : "No se pudo iniciar el navegador."; }
   let skippedByRobots = 0;
+  try {
   while (queue.length && pages.length < maxPages) {
     const batch: string[] = [];
     while (queue.length && batch.length < Math.min(4, maxPages - pages.length)) {
@@ -378,15 +399,30 @@ export async function crawlSite(baseUrl: string, maxPages = 100) {
       try {
         const result = await getText(url, base.hostname, checkRobots);
         const isHtml = /^(text\/html|application\/xhtml\+xml)(?:;|$)/.test(result.contentType);
-        return analyzeHtml(url, result.url, result.status, result.redirects,
+        const staticPage = analyzeHtml(url, result.url, result.status, result.redirects,
           isHtml ? result.body : "", isHtml, result.xRobots);
+        if (options.render !== "js" || !isHtml || result.status !== 200) return staticPage;
+        const original = { title: staticPage.title, h1Count: staticPage.h1Count, textLength: staticPage.textLength };
+        try {
+          if (!renderer) throw new Error(rendererError || "Renderizado no disponible.");
+          const rendered = await renderer.render(result.url, result, (target, signal, remaining) => getText(target, new URL(target).hostname, checkRobots, signal, Math.min(MAX_BODY, remaining)));
+          const renderedPage = analyzeHtml(url, result.url, result.status, result.redirects, rendered.html, true, result.xRobots);
+          renderedPage.rendering = { requested: "js", status: rendered.status, requests: rendered.requests, errors: rendered.errors, static: original };
+          return renderedPage;
+        } catch (error) {
+          staticPage.rendering = { requested: "js", status: "unavailable", requests: 0,
+            errors: [{ url, error: error instanceof Error ? error.message : "Renderizado fallido." }], static: original };
+          return staticPage;
+        }
       } catch (error) {
         if (error instanceof RobotsBlockedError) { skippedByRobots++; return null; }
         return { url, finalUrl: url, status: 0, isHtml: false, redirects: 0, title: null, description: null,
           canonical: null, canonicalError: null, lang: null, viewport: null,
           images: { total: 0, missingAlt: 0, examples: [] },
           h1Count: 0, noindex: false, snippetBlocked: false, textLength: 0, author: false,
-          structuredData: false, jsonLdBlocks: [], links: [], error: String(error) };
+          structuredData: false, jsonLdBlocks: [], links: [],
+          details: { canonicalDeclarations: [], hreflang: [], headingLevels: [], social: {},
+            schema: { types: [], inspectedNodes: 0, truncated: false, issues: [] } }, error: String(error) };
       }
     }));
     for (const page of settled) {
@@ -395,6 +431,7 @@ export async function crawlSite(baseUrl: string, maxPages = 100) {
       for (const link of page.links) enqueue(link);
     }
   }
+  } finally { await renderer?.close(); }
   const pending = queue.some((url) => {
     const rules = rulesByOrigin.get(new URL(url).origin);
     return !rules || (!rules.blocked && rules.parser.isAllowed(url, CRAWLER) !== false);
@@ -404,6 +441,6 @@ export async function crawlSite(baseUrl: string, maxPages = 100) {
     ...(discoveryLimited ? ["discovery_limit"] : []),
     ...(sitemapQueue.some((url) => !sitemapSeen.has(url)) ? ["sitemap_limit"] : []),
   ];
-  return { baseUrl: base.href, pages, sitemapStatuses, skippedByRobots, errors,
+  return { baseUrl: base.href, pages, sitemapStatuses, sitemapUrls: [...sitemapUrls], skippedByRobots, errors,
     truncated: truncationReasons.length > 0, truncationReasons };
 }
