@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.JvnnDev/seo-webmaster-mcp",
-  "description": "Read-only SEO and GEO audits with Google Search Console, Bing, and website crawling.",
+  "description": "Audit any public URL for SEO. Add Google Search Console and Bing data through MCP.",
   "repository": {
     "url": "https://github.com/JvnnDev/seo-webmaster-mcp",
     "source": "github"
   },
-  "version": "0.3.2",
+  "version": "0.4.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "seo-webmaster-mcp",
-      "version": "0.3.2",
+      "version": "0.4.0",
       "transport": { "type": "stdio" }
     }
   ]

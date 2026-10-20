@@ -3,9 +3,9 @@ import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { parse } from "csv-parse/sync";
 import { credentialsPath } from "./config.js";
-import { dateRange, object, requiredString, type JsonObject } from "./utils.js";
+import { dateRange, object, requiredString, validDate, type JsonObject } from "./utils.js";
 
-type GeoRow = { value: string; impressions: number };
+type GeoRow = { value: string; impressions: number | null };
 type GeoReport = {
   siteUrl: string; startDate: string; endDate: string; dimension: "page" | "date";
   importedAt: string; rows: GeoRow[]; source: "gsc_generative_ai_csv";
@@ -37,10 +37,18 @@ export async function importGeoReport(args: JsonObject) {
   const rows = records.map((record): GeoRow => {
     const value = record[valueColumn]?.trim();
     const rawNumber = record[impressionColumn]?.trim();
-    const impressions = rawNumber === "~" || rawNumber === "-" ? 0 : Number(rawNumber?.replace(/,/g, ""));
-    if (!value || !Number.isFinite(impressions) || impressions < 0) throw new Error("Fila GEO inválida.");
-    if (dimension === "date" && !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Fecha GEO inválida.");
-    if (dimension === "page" && !/^https?:\/\//.test(value)) throw new Error("URL GEO inválida.");
+    const impressions = rawNumber === "~" || rawNumber === "-" ? null : Number(rawNumber?.replace(/,/g, ""));
+    if (!value || !rawNumber || (impressions !== null && (!Number.isSafeInteger(impressions) || impressions < 0))) {
+      throw new Error("Fila GEO inválida: las impresiones deben ser enteros no negativos, ~ o -.");
+    }
+    if (dimension === "date" && (!validDate(value) || value < startDate || value > endDate)) {
+      throw new Error("Fecha GEO inválida o fuera del periodo declarado.");
+    }
+    if (dimension === "page") {
+      try {
+        if (!["http:", "https:"].includes(new URL(value).protocol)) throw new Error();
+      } catch { throw new Error("URL GEO inválida."); }
+    }
     return { value, impressions };
   });
   const report: GeoReport = { siteUrl, startDate, endDate, dimension, rows,
@@ -65,10 +73,16 @@ export async function geoReportSummary(args: JsonObject) {
   }
   const report = object(JSON.parse(raw), "reporte GEO") as GeoReport & JsonObject;
   if (report.siteUrl !== siteUrl) return { siteUrl, status: "not_imported" };
-  const rows = (report.rows || []).slice().sort((a, b) => b.impressions - a.impressions);
+  if (!Array.isArray(report.rows) || report.rows.some((row) => !row || typeof row.value !== "string" ||
+    (row.impressions !== null && (!Number.isSafeInteger(row.impressions) || row.impressions < 0)))) {
+    throw new Error("El reporte GEO guardado contiene filas inválidas; vuelve a importar el CSV.");
+  }
+  const rows = report.rows.slice().sort((a, b) => (b.impressions ?? -1) - (a.impressions ?? -1));
+  const unknownImpressionRows = rows.filter((row) => row.impressions === null).length;
   return { siteUrl, status: "ok", source: report.source, dimension: report.dimension,
     startDate: report.startDate, endDate: report.endDate, importedAt: report.importedAt,
-    rows: rows.slice(0, 20), totalImpressions: report.dimension === "date"
-      ? rows.reduce((sum, row) => sum + row.impressions, 0) : null,
-    note: "Las filas por página pueden tener una agregación diferente al total de la propiedad." };
+    rows: rows.slice(0, 20), unknownImpressionRows,
+    totalImpressions: report.dimension === "date" && unknownImpressionRows === 0
+      ? rows.reduce((sum, row) => sum + (row.impressions ?? 0), 0) : null,
+    note: "Las filas por página pueden tener una agregación diferente al total de la propiedad. ~ y - se conservan como impresiones desconocidas (null); si hay fechas desconocidas no se calcula un total." };
 }

@@ -5,3 +5,4 @@ cliente-oauth.json
 client_secret*.json
 credentials.json
 .env*
+HANDOFF.md

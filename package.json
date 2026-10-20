@@ -1,7 +1,7 @@
 {
   "name": "seo-webmaster-mcp",
-  "version": "0.3.2",
-  "description": "MCP para auditar SEO y preparación GEO con Google Search Console, Bing y rastreo web acotado.",
+  "version": "0.4.0",
+  "description": "Read-only SEO audits from a public URL, with optional Google Search Console and Bing data through MCP.",
   "license": "MIT",
   "mcpName": "io.github.JvnnDev/seo-webmaster-mcp",
   "repository": {
@@ -14,7 +14,12 @@
     "seo",
     "geo",
     "search-console",
-    "bing-webmaster"
+    "bing-webmaster",
+    "seo-audit",
+    "technical-seo",
+    "google-search-console",
+    "model-context-protocol",
+    "html-audit"
   ],
   "type": "module",
   "engines": {
@@ -26,6 +31,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
@@ -34,16 +40,20 @@
     "start": "node dist/index.js",
     "setup": "node dist/cli.js setup",
     "status": "node dist/cli.js status",
-    "test": "npm run build && node --test test/server.test.mjs test/advanced.test.mjs"
+    "demo": "npm run build && node examples/demo.mjs",
+    "verify:package": "node scripts/verify-package.mjs",
+    "test": "npm run build && node --test test/server.test.mjs test/advanced.test.mjs test/crawl.test.mjs test/cli.test.mjs"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.7.2",
-    "@modelcontextprotocol/sdk": "1.30.1",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "cheerio": "^1.2.0",
     "csv-parse": "^7.0.3",
     "fast-xml-parser": "^5.11.1",
     "google-auth-library": "^11.1.0",
     "open": "^11.0.4",
+    "robots-parser": "3.0.1",
+    "undici": "7.30.1",
     "zod": "^4.0.0"
   },
   "devDependencies": {

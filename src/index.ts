@@ -219,7 +219,7 @@ const tools: Tool[] = [
       required: ["siteUrl", "query"], additionalProperties: false } },
   { name: "geo_report_summary", description: "Resumen del último CSV generativo de Google importado localmente.",
     inputSchema: { type: "object", properties: { siteUrl }, required: ["siteUrl"], additionalProperties: false } },
-  { name: "seo_audit_advanced", description: "Auditoría avanzada SEO y GEO: APIs oficiales, rastreo acotado y plan de acción con evidencia.",
+  { name: "seo_audit_advanced", description: "Audita una URL pública sin credenciales: rastreo HTML, JSON-LD sintáctico, canónicas, idioma, viewport e imágenes sin alt. Propone acciones con evidencia y verificación. Consulta summary para explicar cobertura y límites: cero acciones no significa que no haya nada que mejorar. Añade gscSiteUrl o bingSiteUrl para incluir datos oficiales de proveedores configurados.",
     inputSchema: { type: "object", properties: { bingSiteUrl: siteUrl, gscSiteUrl: siteUrl,
       baseUrl: url, startDate: date, endDate: date,
       maxPages: { type: "integer", minimum: 1, maximum: 500, default: 100 },
@@ -258,11 +258,13 @@ async function callTool(name: string, args: JsonObject): Promise<unknown> {
 }
 
 const server = new Server(
-  { name: "seo-webmaster-mcp", version: "0.3.2" },
+  { name: "seo-webmaster-mcp", version: "0.4.0" },
   { capabilities: { tools: {} } },
 );
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools.map((tool) => ({ ...tool,
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+})) }));
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     const args = request.params.arguments === undefined ? {} : object(request.params.arguments, "arguments");
