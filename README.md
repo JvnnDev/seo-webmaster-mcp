@@ -4,6 +4,8 @@ Audita una web desde tu asistente con solo pegar su URL. Este MCP local y de sol
 
 Pega una URL → encuentra problemas concretos → corrígelos → repite la auditoría para verificar el cambio.
 
+Guía paso a paso, con un caso real de CTR bajo: [Cómo auditar el SEO de tu web con tu asistente de IA y Search Console](https://www.grupohermoza.com/blog/auditar-seo-con-ia-y-search-console-mcp).
+
 ## Inicio rápido
 
 No necesitas clonar ni compilar el repositorio, ni configurar credenciales para tu primera auditoría. Conecta tu cliente MCP:
@@ -209,6 +211,8 @@ Referencias de desarrollo: [claude-seo-ai](https://github.com/Hainrixz/claude-se
 ---
 
 ## English quick start
+
+Step-by-step guide (in Spanish) with a real low-CTR case: [Cómo auditar el SEO de tu web con tu asistente de IA y Search Console](https://www.grupohermoza.com/blog/auditar-seo-con-ia-y-search-console-mcp).
 
 Install Node.js 22+, then connect your MCP client. Your first audit needs only a public URL:
 
